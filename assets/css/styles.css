@@ -17,6 +17,114 @@ body {
   font-weight: var(--font-weight-regular);
 }
 
+/* Helper Utilities */
+.hidden {
+  display: none !important;
+}
+.hidden-aria[aria-hidden="true"] {
+  opacity: 0.4;
+  pointer-events: none;
+  filter: grayscale(1);
+}
+.sticky-top {
+  position: sticky;
+  align-self: start;
+}
+.width-100 {
+  width: 100%;
+}
+.text-center {
+  text-align: center;
+}
+.flex-wrap {
+  display: flex;
+  flex-wrap: wrap;
+}
+.flex-1 {
+  flex: 1;
+}
+.cursor-pointer {
+  cursor: pointer;
+}
+
+/* UI Components specific to Font Tool */
+.drop-zone {
+  border: 2px dashed var(--border);
+  transition: all 0.3s ease;
+  background: var(--surface);
+  cursor: pointer;
+}
+.drop-zone:hover,
+.drop-zone.drag-over {
+  border-color: var(--primary);
+  background: var(--surface-2);
+}
+
+/* Tabs */
+.tabs {
+  border-bottom: 2px solid var(--border);
+  padding-bottom: 0.5rem;
+}
+.btn-tab {
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-dim);
+  padding: 0.5rem 1rem;
+  cursor: pointer;
+  font-weight: var(--font-weight-medium);
+}
+.btn-tab.active {
+  color: var(--primary);
+  border-bottom-color: var(--primary);
+}
+
+/* Sliders & Inputs */
+.input-text,
+.input-textarea {
+  padding: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-4);
+  background: var(--surface);
+  color: inherit;
+}
+.checkbox-card {
+  transition: background 0.2s;
+  user-select: none;
+  cursor: pointer;
+}
+.checkbox-card:hover {
+  background: var(--surface-hover);
+  border-color: var(--primary-light);
+}
+.checkbox-card:has(input:checked) {
+  background: var(--primary-light);
+  border-color: var(--primary);
+  color: var(--primary-dark);
+}
+
+/* Toggle hidden states */
+.tab-content {
+  display: none;
+}
+.tab-content.active {
+  display: block;
+}
+.list-results {
+  max-height: 200px;
+  overflow-y: auto;
+  /* position: absolute; removed to avoid overlap */
+  /* z-index: 10; removed */
+  width: 100%;
+}
+.result-item {
+  padding: 0.5rem;
+  cursor: pointer;
+}
+.result-item:hover {
+  background: var(--surface-2);
+}
+
 /* Titres */
 .title-l {
   font-size: var(--text-3xl);

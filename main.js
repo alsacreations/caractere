@@ -1,0 +1,331 @@
+/**
+ * main.js - Variable Font Subsetter Logic
+ */
+
+// --- State ---
+let fontBuffer = null
+let fontFileName = "custom-font.ttf"
+let fontObj = null // OpenType.js font object
+let axes = {}
+
+// --- DOM Elements ---
+const dropZone = document.getElementById("drop-zone")
+const fileInput = document.getElementById("font-upload")
+const fontInfo = document.getElementById("font-info")
+const axesContainer = document.getElementById("axes-container")
+const previewText = document.getElementById("preview-text")
+const previewSize = document.getElementById("preview-size")
+const appWorkspace = document.getElementById("app-workspace")
+const generateBtn = document.getElementById("btn-generate")
+const exportStatus = document.getElementById("export-status")
+
+// --- Initialization ---
+function init() {
+  setupDragDrop()
+  setupPreviewControls()
+}
+
+// --- Font Loading Logic ---
+async function loadFontBuffer(buffer, name) {
+  try {
+    fontBuffer = buffer
+    fontFileName = name
+
+    // Parse with OpenType.js
+    fontObj = opentype.parse(buffer)
+    console.log("Font loaded:", fontObj)
+
+    // Update UI
+    fontInfo.innerHTML = `<p class="flex-center-y gap-s"><span class="icon text-primary">✓</span> <strong>${fontObj.names.fontFamily?.en || name}</strong> chargé (${Math.round(buffer.byteLength / 1024)} KB)</p>`
+    appWorkspace.classList.remove("hidden-aria")
+
+    // Extract Axes
+    renderAxes()
+
+    // Setup Preview
+    updatePreviewFont()
+  } catch (err) {
+    console.error(err)
+    fontInfo.innerHTML = `<p class="text-error">Erreur lors du chargement de la police : ${err.message}</p>`
+  }
+}
+
+// --- Drag & Drop ---
+function setupDragDrop() {
+  dropZone.addEventListener("dragover", (e) => {
+    e.preventDefault()
+    dropZone.classList.add("drag-over")
+  })
+
+  dropZone.addEventListener("dragleave", () => {
+    dropZone.classList.remove("drag-over")
+  })
+
+  dropZone.addEventListener("drop", (e) => {
+    e.preventDefault()
+    dropZone.classList.remove("drag-over")
+    const file = e.dataTransfer.files[0]
+    handleFileSelect(file)
+  })
+
+  fileInput.addEventListener("change", (e) => {
+    const file = e.target.files[0]
+    handleFileSelect(file)
+  })
+}
+
+function handleFileSelect(file) {
+  if (!file) return
+
+  // Check extension
+  const ext = file.name.split(".").pop().toLowerCase()
+  if (!["ttf", "otf", "woff", "woff2"].includes(ext)) {
+    alert("Format non supporté. Veuillez utiliser .ttf, .otf, .woff ou .woff2.")
+    return
+  }
+
+  const reader = new FileReader()
+  reader.onload = (e) => {
+    loadFontBuffer(e.target.result, file.name)
+  }
+  reader.readAsArrayBuffer(file)
+}
+
+// --- Axes & Preview ---
+function renderAxes() {
+  axesContainer.innerHTML = ""
+  axes = {}
+
+  // Get axes from fvar table if available
+  const fvar = fontObj.tables.fvar
+  if (!fvar || !fvar.axes || fvar.axes.length === 0) {
+    axesContainer.innerHTML =
+      '<p class="text-s color-dim">Aucun axe de variation détecté.</p>'
+    return
+  }
+
+  fvar.axes.forEach((axis) => {
+    axes[axis.tag] = axis.defaultValue // Init state
+
+    const wrapper = document.createElement("div")
+    wrapper.className = "axis-control flow-xs"
+
+    const labelRow = document.createElement("div")
+    labelRow.className = "flex-between text-s"
+    labelRow.innerHTML = `<span><strong class="text-uppercase">${axis.tag}</strong> (${axis.name.en || axis.tag})</span> <span id="val-${axis.tag}">${axis.defaultValue}</span>`
+
+    const slider = document.createElement("input")
+    slider.type = "range"
+    slider.min = axis.minValue
+    slider.max = axis.maxValue
+    slider.value = axis.defaultValue
+    slider.step = axis.maxValue - axis.minValue > 100 ? 1 : 0.1
+    slider.className = "width-100"
+
+    slider.oninput = (e) => {
+      const val = parseFloat(e.target.value)
+      axes[axis.tag] = val
+      document.getElementById(`val-${axis.tag}`).textContent = val
+      updatePreviewFont()
+    }
+
+    wrapper.appendChild(labelRow)
+    wrapper.appendChild(slider)
+    axesContainer.appendChild(wrapper)
+  })
+}
+
+function updatePreviewFont() {
+  if (!fontObj) return
+
+  // Construct variation settings string
+  // CSS format: "wght" 700, "wdth" 100
+  const variationSettings = Object.entries(axes)
+    .map(([tag, val]) => `"${tag}" ${val}`)
+    .join(", ")
+
+  // Create a Font Face API object to preview directly
+  // Or simpler: convert buffer to base64 and set as @font-face
+  // Blobs are better for memory
+  const blob = new Blob([fontBuffer])
+  const url = URL.createObjectURL(blob)
+  const fontFace = new FontFace("PreviewFont", `url(${url})`)
+
+  fontFace.load().then((loadedFace) => {
+    document.fonts.add(loadedFace)
+    previewText.style.fontFamily = "PreviewFont"
+    previewText.style.fontVariationSettings = variationSettings
+  })
+}
+
+function setupPreviewControls() {
+  previewSize.addEventListener("input", (e) => {
+    previewText.style.fontSize = e.target.value + "px"
+  })
+}
+
+// --- Subsetting Logic ---
+
+async function loadHarfbuzzSubset() {
+  const response = await fetch("assets/vendors/hb-subset.wasm")
+  const result = await WebAssembly.instantiateStreaming(response)
+  return result.instance.exports
+}
+
+// Unicode Ranges Definitions
+const UNICODE_RANGES = {
+  latin: { name: "Latin Basic", range: [0x0020, 0x007f] },
+  "latin-ext": { name: "Latin Extended-A", range: [0x0080, 0x017f] },
+  "latin-ext-b": { name: "Latin Extended-B", range: [0x0180, 0x024f] },
+  punctuation: { name: "Punctuation", range: [0x2000, 0x206f] },
+  currency: { name: "Currency Symbols", range: [0x20a0, 0x20cf] },
+}
+
+function renderUnicodeCheckboxes() {
+  const container = document.getElementById("unicode-ranges")
+  container.innerHTML = ""
+
+  Object.entries(UNICODE_RANGES).forEach(([key, data]) => {
+    const label = document.createElement("label")
+    label.className =
+      "checkbox-card bg-surface border-light padding-s radius-s flex-center-y gap-s"
+    const checked = key === "latin" ? "checked" : ""
+    label.innerHTML = `
+            <input type="checkbox" name="subset" value="${key}" ${checked}>
+            <span>${data.name}</span>
+        `
+    container.appendChild(label)
+  })
+}
+
+async function generateSubset() {
+  if (!fontBuffer) return
+
+  generateBtn.disabled = true
+  exportStatus.classList.remove("hidden")
+  exportStatus.innerHTML = "Chargement de HarfBuzz WASM..."
+
+  try {
+    // Load RAW WASM exports directly
+    const exports = await loadHarfbuzzSubset()
+
+    exportStatus.innerHTML = "Analyse de la police..."
+
+    // Allocate memory for font in WASM memory
+    const heapu8 = new Uint8Array(exports.memory.buffer)
+    const fontPtr = exports.malloc(fontBuffer.byteLength)
+    heapu8.set(new Uint8Array(fontBuffer), fontPtr)
+
+    // Create Face
+    // hb_blob_create(data, length, mode, user_data, destroy_func)
+    const blob = exports.hb_blob_create(
+      fontPtr,
+      fontBuffer.byteLength,
+      2 /*HB_MEMORY_MODE_WRITABLE*/,
+      0,
+      0,
+    )
+    const face = exports.hb_face_create(blob, 0)
+    exports.hb_blob_destroy(blob)
+
+    // Collect unicodes
+    const checkboxes = document.querySelectorAll('input[name="subset"]:checked')
+    let startUnicodes = []
+
+    // Ranges
+    Object.entries(UNICODE_RANGES).forEach(([key, data]) => {
+      const cb = document.querySelector(`input[name="subset"][value="${key}"]`)
+      if (cb && cb.checked) {
+        for (let i = data.range[0]; i <= data.range[1]; i++) {
+          startUnicodes.push(i)
+        }
+      }
+    })
+
+    if (startUnicodes.length === 0) {
+      exports.hb_face_destroy(face)
+      exports.free(fontPtr)
+      throw new Error("Aucun caractère sélectionné.")
+    }
+
+    // Prepare Subset Input
+    const input = exports.hb_subset_input_create_or_fail()
+    const unicode_set = exports.hb_subset_input_unicode_set(input)
+
+    // Add unicodes to set
+    startUnicodes.forEach((cp) => {
+      exports.hb_set_add(unicode_set, cp)
+    })
+
+    // Do Subsetting
+    exportStatus.innerHTML = "Création du subset..."
+    const subset = exports.hb_subset_or_fail(face, input)
+
+    // Clean up input
+    exports.hb_subset_input_destroy(input)
+
+    if (!subset) {
+      exports.hb_face_destroy(face)
+      exports.free(fontPtr)
+      throw new Error(
+        "Echec critique du subsetting (hb_subset_or_fail returned null).",
+      )
+    }
+
+    // Get result blob
+    const resultBlob = exports.hb_face_reference_blob(subset)
+    const offset = exports.hb_blob_get_data(resultBlob, 0)
+    const subsetByteLength = exports.hb_blob_get_length(resultBlob)
+
+    if (subsetByteLength === 0) {
+      exports.hb_blob_destroy(resultBlob)
+      exports.hb_face_destroy(subset)
+      exports.hb_face_destroy(face)
+      exports.free(fontPtr)
+      throw new Error("Echec de la création du subset (taille 0).")
+    }
+
+    // Copy output data
+    const resultView = new Uint8Array(
+      exports.memory.buffer,
+      offset,
+      subsetByteLength,
+    )
+    const subsetBuffer = new Uint8Array(resultView) // Copy it out to safe JS array
+
+    // Cleanup everything
+    exports.hb_blob_destroy(resultBlob)
+    exports.hb_face_destroy(subset)
+    exports.hb_face_destroy(face)
+    exports.free(fontPtr)
+
+    exportStatus.innerHTML = "Téléchargement..."
+    triggerDownload(subsetBuffer.buffer, `subset-${fontFileName}`)
+
+    exportStatus.innerHTML = "Terminé !"
+  } catch (err) {
+    console.error(err)
+    exportStatus.innerHTML = `<span class="text-error">Erreur: ${err.message}</span>`
+  } finally {
+    generateBtn.disabled = false
+  }
+}
+
+function triggerDownload(buffer, filename) {
+  const blob = new Blob([buffer], { type: "font/ttf" })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement("a")
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
+
+// --- Initialize ---
+window.addEventListener("DOMContentLoaded", () => {
+  init()
+  renderUnicodeCheckboxes()
+  generateBtn.addEventListener("click", generateSubset)
+})

@@ -15,10 +15,8 @@
 /* Base */
 @import "styles.css" layer(base);
 
-/* Components */
-
-/* Ici un @import dans le layer(components) */
+/* Animations */
+@import "anime.css" layer(utilities);
 
 /* Utilities */
-
-/* Ici un @import dans le layer(utilities) */
+@import "utilities.css" layer(utilities);
