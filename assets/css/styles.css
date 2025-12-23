@@ -141,6 +141,16 @@ footer {
 }
 
 /* Sections & Cards */
+.section-import {
+  display: grid;
+}
+.section-import:has(> .section-card-light:not([aria-hidden="true"])) {
+  @media (width >= 48rem) {
+    grid-template-columns: 2fr 1fr;
+    gap: var(--spacing-l);
+    align-items: start;
+  }
+}
 .section-card {
   border-radius: var(--radius-8);
 }

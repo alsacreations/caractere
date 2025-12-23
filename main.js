@@ -13,6 +13,7 @@ let axes = {}
 // --- DOM Elements ---
 const dropZone = document.getElementById("drop-zone")
 const fileInput = document.getElementById("font-upload")
+const fontInfoSection = document.getElementById("font-info-section")
 const fontInfo = document.getElementById("font-info")
 const axesContainer = document.getElementById("axes-container")
 const previewText = document.getElementById("preview-text")
@@ -105,7 +106,10 @@ async function loadFontBuffer(buffer, name) {
         </div>
       </dl>
     `
+    fontInfoSection.classList.remove("hidden-aria")
+    fontInfoSection.removeAttribute("aria-hidden")
     appWorkspace.classList.remove("hidden-aria")
+    appWorkspace.removeAttribute("aria-hidden")
 
     // Generate and display @font-face CSS immediately
     generateFontFaceCSS()
@@ -115,6 +119,9 @@ async function loadFontBuffer(buffer, name) {
 
     // Setup Preview
     updatePreviewFont()
+
+    // Initial stats update
+    updateStats()
   } catch (err) {
     console.error(err)
     fontInfo.innerHTML = `<p class="text-error">Erreur lors du chargement de la police : ${err.message}</p>`
@@ -321,16 +328,21 @@ function setupPreviewControls() {
 
 // --- Subsetting Logic ---
 
+let hbSubsetExports = null
+
 async function loadHarfbuzzSubset() {
+  if (hbSubsetExports) return hbSubsetExports
   const response = await fetch("/assets/vendors/hb-subset.wasm")
   const result = await WebAssembly.instantiateStreaming(response)
-  return result.instance.exports
+  hbSubsetExports = result.instance.exports
+  return hbSubsetExports
 }
 
 // Unicode Ranges Definitions
 const UNICODE_RANGES = {
   latin: { name: "Latin Basic", range: [0x0020, 0x007f] },
-  "latin-ext": { name: "Latin Extended-A", range: [0x0080, 0x017f] },
+  "latin-1-supp": { name: "Latin-1 Supplement", range: [0x0080, 0x00ff] },
+  "latin-ext-a": { name: "Latin Extended-A", range: [0x0100, 0x017f] },
   "latin-ext-b": { name: "Latin Extended-B", range: [0x0180, 0x024f] },
   punctuation: { name: "Punctuation", range: [0x2000, 0x206f] },
   currency: { name: "Currency Symbols", range: [0x20a0, 0x20cf] },
@@ -343,13 +355,156 @@ function renderUnicodeCheckboxes() {
   Object.entries(UNICODE_RANGES).forEach(([key, data]) => {
     const label = document.createElement("label")
     label.className = "checkbox-card"
-    const checked = key === "latin" ? "checked" : ""
+    const checked = ["latin", "latin-1-supp"].includes(key) ? "checked" : ""
     label.innerHTML = `
             <input type="checkbox" name="subset" value="${key}" ${checked}>
             <span>${data.name}</span>
         `
     container.appendChild(label)
   })
+
+  // Add event listeners for live updates
+  const checkboxes = container.querySelectorAll('input[name="subset"]')
+  checkboxes.forEach((cb) => {
+    cb.addEventListener("change", updateStats)
+  })
+}
+
+async function runHarfbuzzSubsetting(buffer, ranges) {
+  const exports = await loadHarfbuzzSubset()
+
+  // Allocate memory for font in WASM memory
+  const heapu8 = new Uint8Array(exports.memory.buffer)
+  const fontPtr = exports.malloc(buffer.byteLength)
+  heapu8.set(new Uint8Array(buffer), fontPtr)
+
+  // Create Face
+  const blob = exports.hb_blob_create(
+    fontPtr,
+    buffer.byteLength,
+    2 /*HB_MEMORY_MODE_WRITABLE*/,
+    0,
+    0,
+  )
+  const face = exports.hb_face_create(blob, 0)
+  exports.hb_blob_destroy(blob)
+
+  // Collect unicodes
+  let startUnicodes = []
+
+  ranges.forEach((key) => {
+    const data = UNICODE_RANGES[key]
+    if (data) {
+      for (let i = data.range[0]; i <= data.range[1]; i++) {
+        startUnicodes.push(i)
+      }
+    }
+  })
+
+  if (startUnicodes.length === 0) {
+    exports.hb_face_destroy(face)
+    exports.free(fontPtr)
+    throw new Error("Aucun caractère sélectionné.")
+  }
+
+  // Prepare Subset Input
+  const input = exports.hb_subset_input_create_or_fail()
+  const unicode_set = exports.hb_subset_input_unicode_set(input)
+
+  // Add unicodes to set
+  startUnicodes.forEach((cp) => {
+    exports.hb_set_add(unicode_set, cp)
+  })
+
+  // Do Subsetting
+  const subset = exports.hb_subset_or_fail(face, input)
+
+  // Clean up input
+  exports.hb_subset_input_destroy(input)
+
+  if (!subset) {
+    exports.hb_face_destroy(face)
+    exports.free(fontPtr)
+    throw new Error(
+      "Echec critique du subsetting (hb_subset_or_fail returned null).",
+    )
+  }
+
+  // Get result blob
+  const resultBlob = exports.hb_face_reference_blob(subset)
+  const offset = exports.hb_blob_get_data(resultBlob, 0)
+  const subsetByteLength = exports.hb_blob_get_length(resultBlob)
+
+  if (subsetByteLength === 0) {
+    exports.hb_blob_destroy(resultBlob)
+    exports.hb_face_destroy(subset)
+    exports.hb_face_destroy(face)
+    exports.free(fontPtr)
+    throw new Error("Echec de la création du subset (taille 0).")
+  }
+
+  // Copy output data
+  const resultView = new Uint8Array(
+    exports.memory.buffer,
+    offset,
+    subsetByteLength,
+  )
+  const subsetBuffer = new Uint8Array(resultView) // Copy it out to safe JS array
+
+  // Cleanup everything
+  exports.hb_blob_destroy(resultBlob)
+  exports.hb_face_destroy(subset)
+  exports.hb_face_destroy(face)
+  exports.free(fontPtr)
+
+  return subsetBuffer
+}
+
+async function updateStats() {
+  if (!fontBuffer) return
+  const statsContainer = document.getElementById("subset-stats")
+  statsContainer.classList.remove("hidden")
+  statsContainer.innerHTML =
+    '<p class="text-s color-dim">Calcul de l\'estimation...</p>'
+
+  try {
+    const checkboxes = document.querySelectorAll('input[name="subset"]:checked')
+    const ranges = Array.from(checkboxes).map((cb) => cb.value)
+
+    const subsetBuffer = await runHarfbuzzSubsetting(fontBuffer, ranges)
+
+    const originalSize = fontBuffer.byteLength
+    const subsetSize = subsetBuffer.byteLength
+    // Estimation WOFF2 (~50% du TTF)
+    const estimatedWoff2Size = Math.round(subsetSize * 0.5)
+    const savedBytes = originalSize - estimatedWoff2Size
+    const savedPercent = Math.round((savedBytes / originalSize) * 100)
+
+    const formatSize = (bytes) => {
+      if (bytes < 1024) return bytes + " B"
+      return (bytes / 1024).toFixed(1) + " KB"
+    }
+
+    statsContainer.innerHTML = `
+            <div class="stats-card" style="background: var(--surface-2); padding: 1rem; border-radius: var(--radius-m); border: 1px solid var(--surface-3);">
+                <h4 class="title-s" style="margin-bottom: 0.5rem;">Estimation du gain</h4>
+                <ul style="list-style: none; padding: 0; font-size: 0.9em; display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem;">
+                    <li>Original : <strong>${formatSize(originalSize)}</strong></li>
+                    <li>Subset (TTF) : <strong>${formatSize(subsetSize)}</strong></li>
+                    <li>Estimation WOFF2 : <strong>${formatSize(estimatedWoff2Size)}</strong></li>
+                    <li style="color: var(--color-success);">Gain : <strong>${savedPercent}%</strong></li>
+                </ul>
+            </div>
+        `
+  } catch (err) {
+    // If no chars selected, just clear or show info
+    if (err.message === "Aucun caractère sélectionné.") {
+      statsContainer.innerHTML =
+        '<p class="text-s color-dim">Sélectionnez des plages pour voir l\'estimation.</p>'
+    } else {
+      statsContainer.innerHTML = `<p class="text-error text-s">Erreur d'estimation: ${err.message}</p>`
+    }
+  }
 }
 
 async function generateSubset() {
@@ -357,101 +512,13 @@ async function generateSubset() {
 
   generateBtn.disabled = true
   exportStatus.classList.remove("hidden")
-  exportStatus.innerHTML = "Chargement de HarfBuzz WASM..."
+  exportStatus.innerHTML = "Génération du subset..."
 
   try {
-    // Load RAW WASM exports directly
-    const exports = await loadHarfbuzzSubset()
-
-    exportStatus.innerHTML = "Analyse de la police..."
-
-    // Allocate memory for font in WASM memory
-    const heapu8 = new Uint8Array(exports.memory.buffer)
-    const fontPtr = exports.malloc(fontBuffer.byteLength)
-    heapu8.set(new Uint8Array(fontBuffer), fontPtr)
-
-    // Create Face
-    // hb_blob_create(data, length, mode, user_data, destroy_func)
-    const blob = exports.hb_blob_create(
-      fontPtr,
-      fontBuffer.byteLength,
-      2 /*HB_MEMORY_MODE_WRITABLE*/,
-      0,
-      0,
-    )
-    const face = exports.hb_face_create(blob, 0)
-    exports.hb_blob_destroy(blob)
-
-    // Collect unicodes
     const checkboxes = document.querySelectorAll('input[name="subset"]:checked')
-    let startUnicodes = []
+    const ranges = Array.from(checkboxes).map((cb) => cb.value)
 
-    // Ranges
-    Object.entries(UNICODE_RANGES).forEach(([key, data]) => {
-      const cb = document.querySelector(`input[name="subset"][value="${key}"]`)
-      if (cb && cb.checked) {
-        for (let i = data.range[0]; i <= data.range[1]; i++) {
-          startUnicodes.push(i)
-        }
-      }
-    })
-
-    if (startUnicodes.length === 0) {
-      exports.hb_face_destroy(face)
-      exports.free(fontPtr)
-      throw new Error("Aucun caractère sélectionné.")
-    }
-
-    // Prepare Subset Input
-    const input = exports.hb_subset_input_create_or_fail()
-    const unicode_set = exports.hb_subset_input_unicode_set(input)
-
-    // Add unicodes to set
-    startUnicodes.forEach((cp) => {
-      exports.hb_set_add(unicode_set, cp)
-    })
-
-    // Do Subsetting
-    exportStatus.innerHTML = "Création du subset..."
-    const subset = exports.hb_subset_or_fail(face, input)
-
-    // Clean up input
-    exports.hb_subset_input_destroy(input)
-
-    if (!subset) {
-      exports.hb_face_destroy(face)
-      exports.free(fontPtr)
-      throw new Error(
-        "Echec critique du subsetting (hb_subset_or_fail returned null).",
-      )
-    }
-
-    // Get result blob
-    const resultBlob = exports.hb_face_reference_blob(subset)
-    const offset = exports.hb_blob_get_data(resultBlob, 0)
-    const subsetByteLength = exports.hb_blob_get_length(resultBlob)
-
-    if (subsetByteLength === 0) {
-      exports.hb_blob_destroy(resultBlob)
-      exports.hb_face_destroy(subset)
-      exports.hb_face_destroy(face)
-      exports.free(fontPtr)
-      throw new Error("Echec de la création du subset (taille 0).")
-    }
-
-    // Copy output data
-    const resultView = new Uint8Array(
-      exports.memory.buffer,
-      offset,
-      subsetByteLength,
-    )
-    const subsetBuffer = new Uint8Array(resultView) // Copy it out to safe JS array
-
-    // Cleanup everything
-    exports.hb_blob_destroy(resultBlob)
-    exports.hb_face_destroy(subset)
-    exports.hb_face_destroy(face)
-    exports.free(fontPtr)
+    const subsetBuffer = await runHarfbuzzSubsetting(fontBuffer, ranges)
 
     // Display success message
     exportStatus.innerHTML = `<p class="text-success">✓ Subset créé avec succès ! Téléchargement en cours...</p>`

@@ -27,10 +27,7 @@
 
     <main>
       <!-- SECTION 1: INPUT -->
-      <section
-        data-layout="duo"
-        data-split="2-1"
-        data-gap="l">
+      <section class="section-import">
         <div class="section-card">
           <h2 class="title-m section-title visually-hidden">
             1. Charger une police
@@ -52,7 +49,10 @@
         </div>
 
         <!-- STATUS / INFO -->
-        <div class="section-card-light">
+        <div
+          id="font-info-section"
+          class="section-card-light hidden-aria"
+          aria-hidden="true">
           <h2 class="title-m section-title">Informations</h2>
           <div
             id="font-info"
@@ -163,6 +163,12 @@
                 Génère un fichier .woff2 optimisé contenant uniquement les
                 caractères sélectionnés.
               </p>
+
+              <!-- Stats Display -->
+              <div
+                id="subset-stats"
+                class="subset-stats hidden"
+                style="margin-bottom: 1.5rem"></div>
 
               <!-- CSS Code Display (will be populated by JS) -->
               <div
