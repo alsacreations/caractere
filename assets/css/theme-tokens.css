@@ -21,10 +21,10 @@
   }
 
   /* Couleur primaire */
-  --primary: var(--color-gray-500);
+  --primary: oklch(0.55 0.25 260); /* Vibrant Indigo */
   --on-primary: var(--color-white);
-  --primary-lighten: oklch(from var(--primary) calc(l * 1.2) c h);
-  --primary-darken: oklch(from var(--primary) calc(l * 0.8) c h);
+  --primary-lighten: oklch(from var(--primary) calc(l * 1.1) c h);
+  --primary-darken: oklch(from var(--primary) calc(l * 0.9) c h);
 
   /* Couleur d'accent */
   --accent: light-dark(var(--primary), var(--primary-lighten));
@@ -54,8 +54,8 @@
   --info: light-dark(var(--color-info-500), var(--color-info-300));
 
   /* Bordures */
-  --border-light: var(--color-gray-400);
-  --border-medium: var(--color-gray-600);
+  --border-light: var(--color-gray-200);
+  --border-medium: var(--color-gray-400);
 
   /* Tailles de police */
   --text-s: var(--text-14);

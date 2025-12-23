@@ -89,20 +89,8 @@ async function loadFontBuffer(buffer, name) {
           <dd>${charCount}</dd>
         </div>
         <div class="font-info-item">
-          <dt>Glyphes</dt>
-          <dd>${glyphCount}</dd>
-        </div>
-        <div class="font-info-item">
-          <dt>Font family</dt>
-          <dd>${fontFamily}</dd>
-        </div>
-        <div class="font-info-item">
           <dt>Manufacturer</dt>
           <dd>${manufacturer}</dd>
-        </div>
-        <div class="font-info-item">
-          <dt>Designer</dt>
-          <dd>${designer}</dd>
         </div>
       </dl>
     `
@@ -178,7 +166,7 @@ function renderAxes() {
   const fvar = fontObj.tables.fvar
   if (!fvar || !fvar.axes || fvar.axes.length === 0) {
     axesContainer.innerHTML =
-      '<p class="text-s color-dim">Aucun axe de variation détecté.</p>'
+      '<p class="text-s color-dim">Aucun axe de variation détecté (la police n\'est pas variable).</p>'
     return
   }
 
@@ -197,6 +185,10 @@ function renderAxes() {
   `
 
   axesContainer.appendChild(cssRuleContainer)
+
+  // Create container for axis controls
+  const controlsContainer = document.createElement("div")
+  controlsContainer.className = "axis-control-container"
 
   fvar.axes.forEach((axis) => {
     axes[axis.tag] = axis.defaultValue // Init state
@@ -226,8 +218,10 @@ function renderAxes() {
 
     wrapper.appendChild(labelRow)
     wrapper.appendChild(slider)
-    axesContainer.appendChild(wrapper)
+    controlsContainer.appendChild(wrapper)
   })
+
+  axesContainer.appendChild(controlsContainer)
 }
 
 function updatePreviewFont() {
@@ -269,6 +263,7 @@ function updateCSSRule() {
 function generateFontFaceCSS() {
   const container = document.getElementById("font-face-css-container")
   const codeElement = document.getElementById("font-face-css-code")
+  const preloadElement = document.getElementById("preload-html-code")
 
   if (!container || !codeElement || !fontObj) return
 
@@ -315,8 +310,14 @@ function generateFontFaceCSS() {
 }`
   }
 
+  // Generate Preload HTML
+  const preloadHTML = `<link rel="preload" href="assets/fonts/subset-${baseName}.woff2" as="font" type="font/woff2" crossorigin="anonymous" />`
+
   // Display the CSS code
   codeElement.textContent = fontFaceCSS
+  if (preloadElement) {
+    preloadElement.textContent = preloadHTML
+  }
   container.style.display = "block"
 }
 
@@ -486,9 +487,9 @@ async function updateStats() {
     }
 
     statsContainer.innerHTML = `
-            <div class="stats-card" style="background: var(--surface-2); padding: 1rem; border-radius: var(--radius-m); border: 1px solid var(--surface-3);">
-                <h4 class="title-s" style="margin-bottom: 0.5rem;">Estimation du gain</h4>
-                <ul style="list-style: none; padding: 0; font-size: 0.9em; display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem;">
+            <div class="stats-card">
+                <h4 class="title-s">Estimation du gain</h4>
+                <ul class="stats-list" role="list">
                     <li>Original : <strong>${formatSize(originalSize)}</strong></li>
                     <li>Subset (TTF) : <strong>${formatSize(subsetSize)}</strong></li>
                     <li>Estimation WOFF2 : <strong>${formatSize(estimatedWoff2Size)}</strong></li>
