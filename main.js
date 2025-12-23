@@ -331,9 +331,11 @@ function setupPreviewControls() {
 
 let hbSubsetExports = null
 
+import hbSubsetWasmUrl from "./assets/vendors/hb-subset.wasm?url"
+
 async function loadHarfbuzzSubset() {
   if (hbSubsetExports) return hbSubsetExports
-  const response = await fetch("assets/vendors/hb-subset.wasm")
+  const response = await fetch(hbSubsetWasmUrl)
   const result = await WebAssembly.instantiateStreaming(response)
   hbSubsetExports = result.instance.exports
   return hbSubsetExports

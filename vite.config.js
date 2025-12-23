@@ -5,5 +5,9 @@
  */
 
 export default {
-  // config options
-};
+  base: "/caractere/",
+  build: {
+    outDir: "dist",
+    assetsDir: "assets",
+  },
+}
