@@ -3,6 +3,16 @@
  * ----------------------------------
  */
 
+/* Fonts */
+@font-face {
+  font-family: "dynapuff";
+  src:
+    url("../fonts/dynapuff.woff2") format("woff2") tech("variations"),
+    url("../fonts/dynapuff.woff2") format("woff2-variations");
+  font-weight: 400 700;
+  font-display: swap;
+}
+
 /* Modificateurs de Layouts */
 [data-layout*="boxed"] {
   --boxed-max: 96rem; /* 1536px */
@@ -29,9 +39,11 @@ body {
 
 /* Titres */
 .title-l {
-  font-size: var(--text-3xl);
-  font-weight: var(--font-weight-bold);
-  letter-spacing: -0.02em;
+  font-family: dynapuff, system-ui, sans-serif;
+  font-size: var(--text-4xl);
+  font-variation-settings:
+    "wght" 700,
+    "wdth" 100;
   line-height: 1.1;
 }
 

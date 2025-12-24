@@ -3,6 +3,7 @@
  */
 
 import opentype from "opentype.js"
+import { compress } from "woff2-encoder"
 
 // --- State ---
 let fontBuffer = null
@@ -546,14 +547,21 @@ async function generateSubset() {
 
     const subsetBuffer = await runHarfbuzzSubsetting(fontBuffer, ranges)
 
+    // Compress to WOFF2
+    exportStatus.innerHTML = "Compression WOFF2..."
+    const woff2Buffer = await compress(subsetBuffer)
+
     // Display success message
-    exportStatus.innerHTML = `<p class="text-success">✓ Subset créé avec succès ! Téléchargement en cours...</p>`
+    exportStatus.innerHTML = `<p class="text-success">✓ Subset WOFF2 créé avec succès ! Téléchargement en cours...</p>`
 
     // Trigger download
-    triggerDownload(subsetBuffer.buffer, `subset-${fontFileName}`)
+    triggerDownload(
+      woff2Buffer,
+      `subset-${fontFileName.replace(/\.(ttf|otf|woff|woff2)$/i, "")}.woff2`,
+    )
 
     // Update message after download
-    exportStatus.innerHTML = `<p class="text-success">✓ Fichier téléchargé avec succès !</p>`
+    exportStatus.innerHTML = `<p class="text-success">✓ Fichier WOFF2 téléchargé avec succès !</p>`
   } catch (err) {
     console.error(err)
     exportStatus.innerHTML = `<span class="text-error">Erreur: ${err.message}</span>`
@@ -563,7 +571,7 @@ async function generateSubset() {
 }
 
 function triggerDownload(buffer, filename) {
-  const blob = new Blob([buffer], { type: "font/ttf" })
+  const blob = new Blob([buffer], { type: "font/woff2" })
   const url = URL.createObjectURL(blob)
   const a = document.createElement("a")
   a.href = url
