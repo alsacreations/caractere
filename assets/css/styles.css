@@ -19,7 +19,12 @@
 }
 
 /* Base */
+html {
+  overflow-x: hidden;
+}
+
 body {
+  overflow-x: clip;
   padding: var(--spacing-s);
   background-color: var(--surface);
   color: var(--on-surface);
