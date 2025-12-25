@@ -3,7 +3,7 @@
  */
 
 import opentype from "opentype.js"
-import { compress } from "woff2-encoder"
+import { compress, decompress } from "woff2-encoder"
 
 // --- State ---
 let fontBuffer = null
@@ -55,7 +55,13 @@ async function loadFontBuffer(buffer, name) {
     fontFileName = name
 
     // Parse with OpenType.js
-    fontObj = opentype.parse(buffer)
+    if (name.toLowerCase().endsWith(".woff2")) {
+      const decompressed = await decompress(new Uint8Array(buffer))
+      fontBuffer = decompressed.buffer
+      fontObj = opentype.parse(decompressed.buffer)
+    } else {
+      fontObj = opentype.parse(buffer)
+    }
     console.log("Font loaded:", fontObj)
 
     // Extract comprehensive metadata
@@ -452,9 +458,8 @@ async function runHarfbuzzSubsetting(buffer, ranges) {
   if (!subset) {
     exports.hb_face_destroy(face)
     exports.free(fontPtr)
-    throw new Error(
-      "Echec critique du subsetting (hb_subset_or_fail returned null).",
-    )
+    // Return null instead of throwing to allow caller to handle gracefully
+    return null
   }
 
   // Get result blob
@@ -500,6 +505,12 @@ async function updateStats() {
 
     const subsetBuffer = await runHarfbuzzSubsetting(fontBuffer, ranges)
 
+    if (!subsetBuffer) {
+      statsContainer.innerHTML =
+        "<p class=\"text-warning text-s\">L'estimation n'est pas disponible pour ce fichier (subsetting impossible).</p>"
+      return
+    }
+
     const originalSize = fontBuffer.byteLength
     const subsetSize = subsetBuffer.byteLength
     // Estimation WOFF2 (~50% du TTF)
@@ -539,7 +550,7 @@ async function generateSubset() {
 
   generateBtn.disabled = true
   exportStatus.classList.remove("hidden")
-  exportStatus.innerHTML = "Génération du subset..."
+  exportStatus.innerHTML = "Génération du subset…"
 
   try {
     const checkboxes = document.querySelectorAll('input[name="subset"]:checked')
@@ -547,21 +558,23 @@ async function generateSubset() {
 
     const subsetBuffer = await runHarfbuzzSubsetting(fontBuffer, ranges)
 
+    if (!subsetBuffer) {
+      exportStatus.innerHTML = `<p class="text-warning">⚠ Impossible de créer le subset. Le téléchargement ne contiendra que le fichier original.</p>`
+      return
+    }
+
     // Compress to WOFF2
     exportStatus.innerHTML = "Compression WOFF2…"
     const woff2Buffer = await compress(subsetBuffer)
 
     // Display success message
-    exportStatus.innerHTML = `<p class="text-success">✓ Subset WOFF2 créé avec succès ! Téléchargement en cours...</p>`
+    exportStatus.innerHTML = `<p class="text-success">✓ Subset WOFF2 créé avec succès !</p>`
 
     // Trigger download
     triggerDownload(
       woff2Buffer,
       `optim-${fontFileName.replace(/\.(ttf|otf|woff|woff2)$/i, "")}.woff2`,
     )
-
-    // Update message after download
-    exportStatus.innerHTML = `<p class="text-success">✓ Fichier WOFF2 téléchargé avec succès !</p>`
   } catch (err) {
     console.error(err)
     exportStatus.innerHTML = `<span class="text-error">Erreur: ${err.message}</span>`
