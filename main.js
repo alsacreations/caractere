@@ -636,6 +636,9 @@ async function generateSubset() {
       : `${cleanBaseName}-opti.woff2`
 
     triggerDownload(woff2Buffer, finalFileName)
+
+    // Clear status message after download
+    exportStatus.innerHTML = ""
   } catch (err) {
     console.error(err)
     exportStatus.innerHTML = `<span class="text-error">Erreur: ${err.message}</span>`
